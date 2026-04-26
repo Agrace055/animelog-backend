@@ -7,10 +7,10 @@ import lombok.Data;
  */
 @Data
 public class BangumiSourceQueryRequest {
-    private String q;
+    private String keyword;
     private String mediaType;
     private Integer year;
-    private boolean includeNsfw = false;
+    private boolean nsfw = false;
     private int page = 1;
     private int size = 20;
 }

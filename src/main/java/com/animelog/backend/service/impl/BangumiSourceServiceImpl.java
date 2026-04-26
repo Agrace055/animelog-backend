@@ -23,8 +23,8 @@ public class BangumiSourceServiceImpl implements BangumiSourceService {
     @Override
     public PageResult<BangumiSourceSubject> sources(BangumiSourceQueryRequest request) {
         QueryWrapper<BangumiSourceSubject> query = new QueryWrapper<>();
-        if (request.getQ() != null && !request.getQ().isBlank()) {
-            query.and(w -> w.like("name", request.getQ()).or().like("name_cn", request.getQ()));
+        if (request.getKeyword() != null && !request.getKeyword().isBlank()) {
+            query.and(w -> w.like("name", request.getKeyword()).or().like("name_cn", request.getKeyword()));
         }
         if (request.getMediaType() != null && !request.getMediaType().isBlank()) {
             query.eq("media_type", request.getMediaType());
@@ -32,7 +32,7 @@ public class BangumiSourceServiceImpl implements BangumiSourceService {
         if (request.getYear() != null) {
             query.eq("year", request.getYear());
         }
-        if (!request.isIncludeNsfw()) {
+        if (!request.isNsfw()) {
             query.eq("nsfw", false);
         }
         query.orderByDesc("score");
