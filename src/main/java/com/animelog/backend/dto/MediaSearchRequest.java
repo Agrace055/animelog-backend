@@ -7,9 +7,10 @@ import lombok.Data;
  */
 @Data
 public class MediaSearchRequest {
-    private String q;
+    private String keyword;
     private String type;
-    private boolean includeNsfw = false;
+    private Integer year;
+    private boolean nsfw = false;
     private int page = 1;
     private int size = 20;
 }

@@ -1,8 +1,8 @@
 package com.animelog.backend.service;
 
-import com.animelog.backend.domain.Media;
 import com.animelog.backend.dto.MediaQueryRequest;
 import com.animelog.backend.dto.MediaSearchRequest;
+import com.animelog.backend.dto.MediaVO;
 import com.animelog.backend.dto.PageResult;
 
 /**
@@ -15,7 +15,7 @@ public interface MediaService {
      * @param request 查询参数（类型、年份、状态、NSFW 过滤、排序、分页）
      * @return 分页结果
      */
-    PageResult<Media> list(MediaQueryRequest request);
+    PageResult<MediaVO> list(MediaQueryRequest request);
 
     /**
      * 关键词搜索媒体条目。
@@ -23,10 +23,10 @@ public interface MediaService {
      * @param request 搜索参数（关键词、类型、NSFW 过滤、分页）
      * @return 分页结果
      */
-    PageResult<Media> search(MediaSearchRequest request);
+    PageResult<MediaVO> search(MediaSearchRequest request);
 
     /**
      * 根据 ID 获取媒体详情。
      */
-    Media detail(Long id);
+    MediaVO detail(Long id);
 }
