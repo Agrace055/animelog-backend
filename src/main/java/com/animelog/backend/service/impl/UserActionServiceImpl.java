@@ -3,6 +3,7 @@ package com.animelog.backend.service.impl;
 import com.animelog.backend.domain.*;
 import com.animelog.backend.dto.NotificationVO;
 import com.animelog.backend.dto.UpdateProfileRequest;
+import com.animelog.backend.dto.UserVO;
 import com.animelog.backend.mapper.*;
 import com.animelog.backend.service.UserActionService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -289,12 +290,12 @@ public class UserActionServiceImpl implements UserActionService {
     }
 
     @Override
-    public UserAccount userProfile(Long userId) {
-        return userMapper.selectById(userId);
+    public UserVO userProfile(Long userId) {
+        return UserVO.from(userMapper.selectById(userId));
     }
 
     @Override
-    public UserAccount updateProfile(Long userId, UpdateProfileRequest request) {
+    public UserVO updateProfile(Long userId, UpdateProfileRequest request) {
         UserAccount user = userMapper.selectById(userId);
         if (user == null) throw new IllegalArgumentException("用户不存在");
         if (request.getNickname() != null) user.setNickname(request.getNickname());
@@ -303,6 +304,6 @@ public class UserActionServiceImpl implements UserActionService {
         if (request.getAvatarUrl() != null) user.setAvatarUrl(request.getAvatarUrl());
         user.setUpdatedAt(LocalDateTime.now());
         userMapper.updateById(user);
-        return user;
+        return UserVO.from(user);
     }
 }

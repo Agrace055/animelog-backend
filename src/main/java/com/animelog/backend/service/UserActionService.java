@@ -3,6 +3,7 @@ package com.animelog.backend.service;
 import com.animelog.backend.domain.*;
 import com.animelog.backend.dto.NotificationVO;
 import com.animelog.backend.dto.UpdateProfileRequest;
+import com.animelog.backend.dto.UserVO;
 
 import java.util.List;
 
@@ -56,8 +57,8 @@ public interface UserActionService {
     NsfwAccessApplication applyNsfw(NsfwAccessApplication application);
 
     /** 获取用户个人信息。 */
-    UserAccount userProfile(Long userId);
+    UserVO userProfile(Long userId);
 
     /** 更新用户个人信息（nickname、email、phone、avatarUrl，null 则跳过）。 */
-    UserAccount updateProfile(Long userId, UpdateProfileRequest request);
+    UserVO updateProfile(Long userId, UpdateProfileRequest request);
 }
