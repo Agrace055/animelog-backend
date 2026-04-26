@@ -26,6 +26,7 @@ animelog:
     work-dir: /tmp/animelog-bangumi-test
     task-runner-enabled: false
     task-runner-lock-seconds: 60
+    tag-min-count: 5
   aliyun:
     region-id: cn-hangzhou
     access-key-id:

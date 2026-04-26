@@ -6,6 +6,7 @@ import com.animelog.backend.dto.MediaSearchRequest;
 import com.animelog.backend.dto.MediaVO;
 import com.animelog.backend.dto.PageResult;
 import com.animelog.backend.mapper.MediaMapper;
+import com.animelog.backend.mapper.MediaTagMapper;
 import com.animelog.backend.service.MediaService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -20,9 +21,11 @@ import java.util.stream.Collectors;
 @Service
 public class MediaServiceImpl implements MediaService {
     private final MediaMapper mediaMapper;
+    private final MediaTagMapper mediaTagMapper;
 
-    public MediaServiceImpl(MediaMapper mediaMapper) {
+    public MediaServiceImpl(MediaMapper mediaMapper, MediaTagMapper mediaTagMapper) {
         this.mediaMapper = mediaMapper;
+        this.mediaTagMapper = mediaTagMapper;
     }
 
     @Override
@@ -72,6 +75,11 @@ public class MediaServiceImpl implements MediaService {
 
     @Override
     public MediaVO detail(Long id) {
-        return MediaVO.from(mediaMapper.selectById(id));
+        MediaVO vo = MediaVO.from(mediaMapper.selectById(id));
+        if (vo != null) {
+            List<String> tags = mediaTagMapper.findTagNamesByMediaId(id);
+            vo.setTags(tags);
+        }
+        return vo;
     }
 }

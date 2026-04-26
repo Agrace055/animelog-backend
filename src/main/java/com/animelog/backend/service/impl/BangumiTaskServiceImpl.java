@@ -45,6 +45,8 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
     private final BangumiSourceSubjectMapper sourceMapper;
     private final BangumiArchiveFileMapper archiveFileMapper;
     private final MediaMapper mediaMapper;
+    private final MediaTagMapper mediaTagMapper;
+    private final MediaTagRelationMapper mediaTagRelationMapper;
     private final StringRedisTemplate redisTemplate;
     private final AnimeLogProperties properties;
     private final ObjectMapper objectMapper;
@@ -57,6 +59,8 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         BangumiSourceSubjectMapper sourceMapper,
         BangumiArchiveFileMapper archiveFileMapper,
         MediaMapper mediaMapper,
+        MediaTagMapper mediaTagMapper,
+        MediaTagRelationMapper mediaTagRelationMapper,
         StringRedisTemplate redisTemplate,
         AnimeLogProperties properties
     ) {
@@ -66,6 +70,8 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         this.sourceMapper = sourceMapper;
         this.archiveFileMapper = archiveFileMapper;
         this.mediaMapper = mediaMapper;
+        this.mediaTagMapper = mediaTagMapper;
+        this.mediaTagRelationMapper = mediaTagRelationMapper;
         this.redisTemplate = redisTemplate;
         this.properties = properties;
         this.objectMapper = new ObjectMapper().configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
@@ -132,9 +138,6 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         task.setSkipCount(0);
         task.setUpdateCount(0);
         task.setFailureCount(0);
-        LocalDateTime now = LocalDateTime.now();
-        task.setCreatedAt(now);
-        task.setUpdatedAt(now);
         taskMapper.insert(task);
         return task;
     }
@@ -200,7 +203,6 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         task.setSkipCount(counters.skipped);
         task.setUpdateCount(counters.updated);
         task.setFailureCount(counters.failed);
-        task.setUpdatedAt(LocalDateTime.now());
         taskMapper.updateById(task);
     }
 
@@ -232,6 +234,7 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
                 mediaMapper.insert(media);
                 source.setImportedMediaId(media.getId());
                 sourceMapper.updateById(source);
+                upsertTagsForMedia(media.getId(), source.getTagsJson());
                 counters.inserted++;
                 taskItem(task.getId(), source.getBangumiId(), media.getId(), "inserted", "success", null);
             } else if (Objects.equals(existing.getSourceHash(), source.getSourceHash()) || Boolean.TRUE.equals(existing.getManualOverride())) {
@@ -248,8 +251,8 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
                 existing.setScore(source.getScore());
                 existing.setNsfw(source.getNsfw());
                 existing.setSourceHash(source.getSourceHash());
-                existing.setUpdatedAt(LocalDateTime.now());
                 mediaMapper.updateById(existing);
+                upsertTagsForMedia(existing.getId(), source.getTagsJson());
                 counters.updated++;
                 taskItem(task.getId(), source.getBangumiId(), existing.getId(), "updated", "success", null);
             }
@@ -260,7 +263,6 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         task.setSkipCount(counters.skipped);
         task.setUpdateCount(counters.updated);
         task.setFailureCount(counters.failed);
-        task.setUpdatedAt(LocalDateTime.now());
         taskMapper.updateById(task);
     }
 
@@ -379,9 +381,6 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         source.setNsfw(node.path("nsfw").asBoolean(false));
         source.setRawJson(objectMapper.writeValueAsString(node));
         source.setSourceHash(hash);
-        LocalDateTime now = LocalDateTime.now();
-        source.setCreatedAt(now);
-        source.setUpdatedAt(now);
         return source;
     }
 
@@ -403,9 +402,6 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         media.setSourceId(String.valueOf(source.getBangumiId()));
         media.setSourceHash(source.getSourceHash());
         media.setIsDeleted(0);
-        LocalDateTime now = LocalDateTime.now();
-        media.setCreatedAt(now);
-        media.setUpdatedAt(now);
         return media;
     }
 
@@ -471,7 +467,6 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         file.setFileHash(hash);
         file.setStoragePath(path.toString());
         file.setStatus("downloaded");
-        file.setCreatedAt(LocalDateTime.now());
         archiveFileMapper.insert(file);
     }
 
@@ -534,7 +529,6 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         task.setStatus("running");
         task.setCurrentStep(step);
         task.setStartedAt(LocalDateTime.now());
-        task.setUpdatedAt(LocalDateTime.now());
         taskMapper.updateById(task);
     }
 
@@ -544,7 +538,6 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         task.setStatus(status);
         task.setErrorMessage(error);
         task.setFinishedAt(LocalDateTime.now());
-        task.setUpdatedAt(LocalDateTime.now());
         taskMapper.updateById(task);
     }
 
@@ -598,7 +591,6 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         item.setAction(action);
         item.setStatus(status);
         item.setErrorMessage(error);
-        item.setCreatedAt(LocalDateTime.now());
         itemMapper.insert(item);
     }
 
@@ -610,6 +602,58 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
     /** 可抛出异常的 Runnable 函数式接口。 */
     private interface CheckedRunnable {
         void run() throws Exception;
+    }
+
+    /**
+     * 为指定媒体写入标签：先清除旧关联，再按阈值过滤后重建。<br>
+     * 规则：
+     * <ul>
+     *   <li>只导入 count &ge; tagMinCount 的标签（过滤低质量/噪音标签）</li>
+     *   <li>标签名做 trim + 去空 + 长度限制（&le;50 字符）</li>
+     *   <li>list 去重后再写入，防止同名标签重复关联</li>
+     *   <li>tag_name 列存在唯一约束，使用 INSERT … ON CONFLICT DO NOTHING 保证全局唯一</li>
+     * </ul>
+     *
+     * @param mediaId  目标媒体 ID
+     * @param tagsJson Bangumi tags 原始 JSON，格式为 [{"name":"...", "count":N}, ...]
+     */
+    private void upsertTagsForMedia(Long mediaId, String tagsJson) {
+        if (mediaId == null || tagsJson == null || tagsJson.isBlank()) {
+            return;
+        }
+        int minCount = properties.bangumi().tagMinCount();
+        List<String> tagNames = new ArrayList<>();
+        try {
+            JsonNode arr = objectMapper.readTree(tagsJson);
+            if (!arr.isArray()) return;
+            Set<String> seen = new LinkedHashSet<>();
+            for (JsonNode tagNode : arr) {
+                int count = tagNode.path("count").asInt(0);
+                if (count < minCount) continue;
+                String name = tagNode.path("name").asText("").trim();
+                if (!name.isBlank() && name.length() <= 50) {
+                    seen.add(name);
+                }
+            }
+            tagNames.addAll(seen);
+        } catch (Exception e) {
+            // tagsJson 格式异常时静默跳过，不影响主体数据导入
+            return;
+        }
+
+        // 先清除旧关联（标签本体不删除，仅解除关联）
+        mediaTagRelationMapper.deleteByMediaId(mediaId);
+
+        // 逐个 upsert 标签并建立关联
+        for (String name : tagNames) {
+            // INSERT … ON CONFLICT DO NOTHING，保证全局唯一
+            mediaTagMapper.insertIgnore(name);
+            // 查出 id（有可能是已存在的记录）
+            MediaTag tag = mediaTagMapper.findByName(name);
+            if (tag != null) {
+                mediaTagRelationMapper.upsert(mediaId, tag.getId());
+            }
+        }
     }
 
     /** 处理计数器，统计各类操作的数量。 */

@@ -27,7 +27,7 @@ public class MediaVO {
     private BigDecimal score;
     private Integer scoreCount;
     private Boolean nsfw;
-    /** 标签列表（当前暂无专用表，返回空列表）。 */
+    /** 标签列表（从 media_tag / media_tag_relation 关联查询填充，列表接口为空，详情接口有值）。 */
     private List<String> tags = new ArrayList<>();
     /** 角色列表（当前暂无专用表，返回空列表）。 */
     private List<MediaCharacterVO> characters = new ArrayList<>();

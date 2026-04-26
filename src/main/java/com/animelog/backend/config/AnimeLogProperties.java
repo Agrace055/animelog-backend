@@ -25,8 +25,8 @@ public record AnimeLogProperties(
     public record Minio(String endpoint, String accessKey, String secretKey, String bucket, String publicObjectBaseUrl) {
     }
 
-    /** Bangumi 配置：最新归档 URL、工作目录、任务执行器开关、锁超时时间。 */
-    public record Bangumi(String latestJsonUrl, String workDir, boolean taskRunnerEnabled, long taskRunnerLockSeconds) {
+    /** Bangumi 配置：最新归档 URL、工作目录、任务执行器开关、锁超时时间、标签导入最低 count 阈值。 */
+    public record Bangumi(String latestJsonUrl, String workDir, boolean taskRunnerEnabled, long taskRunnerLockSeconds, int tagMinCount) {
     }
 
     /** 阿里云配置：短信签名、模板和邮件推送。 */

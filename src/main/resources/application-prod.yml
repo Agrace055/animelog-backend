@@ -29,6 +29,7 @@ animelog:
     work-dir: ${BANGUMI_ARCHIVE_WORK_DIR:/data/animelog-bangumi}
     task-runner-enabled: ${BANGUMI_TASK_RUNNER_ENABLED:true}
     task-runner-lock-seconds: ${BANGUMI_TASK_RUNNER_LOCK_SECONDS:600}
+    tag-min-count: ${BANGUMI_TAG_MIN_COUNT:5}
   aliyun:
     region-id: ${ALIYUN_REGION_ID:cn-hangzhou}
     access-key-id: ${ALIYUN_ACCESS_KEY_ID}
