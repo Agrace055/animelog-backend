@@ -97,4 +97,24 @@ public class AdminController {
         adminService.reviewNsfw(id, action, reviewerId);
         return AjaxResult.success();
     }
+
+    /**
+     * 获取所有用户反馈列表，按创建时间倒序。
+     */
+    @GetMapping("/feedback")
+    public AjaxResult feedbacks() {
+        return AjaxResult.success(adminService.listFeedbacks());
+    }
+
+    /**
+     * 更新用户反馈处理状态。
+     *
+     * @param id     反馈 ID
+     * @param status 状态：pending / resolved / closed
+     */
+    @PatchMapping("/feedback/{id}/status")
+    public AjaxResult updateFeedbackStatus(@PathVariable Long id, @RequestParam String status) {
+        adminService.updateFeedbackStatus(id, status);
+        return AjaxResult.success();
+    }
 }

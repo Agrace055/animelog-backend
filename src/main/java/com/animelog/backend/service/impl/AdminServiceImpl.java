@@ -19,19 +19,22 @@ public class AdminServiceImpl implements AdminService {
     private final CalendarItemMapper calendarMapper;
     private final NsfwAccessApplicationMapper nsfwMapper;
     private final UserAccountMapper userMapper;
+    private final UserFeedbackMapper feedbackMapper;
 
     public AdminServiceImpl(
         MediaMapper mediaMapper,
         ReviewMapper reviewMapper,
         CalendarItemMapper calendarMapper,
         NsfwAccessApplicationMapper nsfwMapper,
-        UserAccountMapper userMapper
+        UserAccountMapper userMapper,
+        UserFeedbackMapper feedbackMapper
     ) {
         this.mediaMapper = mediaMapper;
         this.reviewMapper = reviewMapper;
         this.calendarMapper = calendarMapper;
         this.nsfwMapper = nsfwMapper;
         this.userMapper = userMapper;
+        this.feedbackMapper = feedbackMapper;
     }
 
     @Override
@@ -39,7 +42,6 @@ public class AdminServiceImpl implements AdminService {
         // 设置 ID 并标记为人工覆盖，避免被后续自动同步覆盖
         media.setId(id);
         media.setManualOverride(true);
-        media.setUpdatedAt(LocalDateTime.now());
         mediaMapper.updateById(media);
         return mediaMapper.selectById(id);
     }
@@ -70,9 +72,6 @@ public class AdminServiceImpl implements AdminService {
     @Override
     public CalendarItem createCalendarItem(CalendarItem item) {
         // 初始化日历条目的基本字段（is_deleted 由 DB DEFAULT 0 自动设置）
-        LocalDateTime now = LocalDateTime.now();
-        item.setCreatedAt(now);
-        item.setUpdatedAt(now);
         calendarMapper.insert(item);
         return item;
     }
@@ -80,7 +79,6 @@ public class AdminServiceImpl implements AdminService {
     @Override
     public CalendarItem updateCalendarItem(Long id, CalendarItem item) {
         item.setId(id);
-        item.setUpdatedAt(LocalDateTime.now());
         calendarMapper.updateById(item);
         return calendarMapper.selectById(id);
     }
@@ -116,9 +114,23 @@ public class AdminServiceImpl implements AdminService {
             UserAccount user = userMapper.selectById(app.getUserId());
             if (user != null) {
                 user.setNsfwStatus("approved");
-                user.setUpdatedAt(LocalDateTime.now());
                 userMapper.updateById(user);
             }
+        }
+    }
+
+    @Override
+    public List<UserFeedback> listFeedbacks() {
+        return feedbackMapper.selectList(
+            new QueryWrapper<UserFeedback>().orderByDesc("created_at"));
+    }
+
+    @Override
+    public void updateFeedbackStatus(Long id, String status) {
+        UserFeedback fb = feedbackMapper.selectById(id);
+        if (fb != null) {
+            fb.setStatus(status);
+            feedbackMapper.updateById(fb);
         }
     }
 }

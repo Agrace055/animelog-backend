@@ -34,4 +34,10 @@ public interface AdminService {
 
     /** 审核 NSFW 访问申请。 */
     void reviewNsfw(Long id, String action, Long reviewerId);
+
+    /** 获取所有用户反馈，按创建时间倒序。 */
+    List<UserFeedback> listFeedbacks();
+
+    /** 更新反馈处理状态（pending / resolved / closed）。 */
+    void updateFeedbackStatus(Long id, String status);
 }
