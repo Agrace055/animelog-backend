@@ -74,11 +74,6 @@ jobs:
 
             echo ">>> Deployment complete: main-${SHORT_SHA}"
 
-            # Clean up: keep only 3 most recent main-* tags locally
-            docker images "${{ env.ACR_IMAGE }}" \
-              --format "{{.Tag}}" \
-              | grep "^main-" \
-              | sort -r \
-              | tail -n +4 \
-              | xargs -I{} docker rmi "${{ env.ACR_IMAGE }}:{}" 2>/dev/null \
-              || true
+            # Remove every local image that is not used by an existing container.
+            # ACR is the source of history; the server should only keep active images.
+            docker image prune -af || true
