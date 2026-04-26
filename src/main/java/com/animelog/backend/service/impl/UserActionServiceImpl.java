@@ -7,6 +7,7 @@ import com.animelog.backend.dto.UserVO;
 import com.animelog.backend.mapper.*;
 import com.animelog.backend.service.UserActionService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -31,6 +32,7 @@ public class UserActionServiceImpl implements UserActionService {
     private final UserFeedbackMapper feedbackMapper;
     private final NsfwAccessApplicationMapper nsfwMapper;
     private final UserAccountMapper userMapper;
+    private final PasswordEncoder passwordEncoder;
 
     public UserActionServiceImpl(
         UserMediaRecordMapper recordMapper,
@@ -43,7 +45,8 @@ public class UserActionServiceImpl implements UserActionService {
         CalendarItemMapper calendarMapper,
         UserFeedbackMapper feedbackMapper,
         NsfwAccessApplicationMapper nsfwMapper,
-        UserAccountMapper userMapper
+        UserAccountMapper userMapper,
+        PasswordEncoder passwordEncoder
     ) {
         this.recordMapper = recordMapper;
         this.favoriteMapper = favoriteMapper;
@@ -56,6 +59,7 @@ public class UserActionServiceImpl implements UserActionService {
         this.feedbackMapper = feedbackMapper;
         this.nsfwMapper = nsfwMapper;
         this.userMapper = userMapper;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
@@ -290,5 +294,16 @@ public class UserActionServiceImpl implements UserActionService {
         if (request.getAvatarUrl() != null) user.setAvatarUrl(request.getAvatarUrl());
         userMapper.updateById(user);
         return UserVO.from(user);
+    }
+
+    @Override
+    public void changePassword(Long userId, String oldPassword, String newPassword) {
+        UserAccount user = userMapper.selectById(userId);
+        if (user == null) throw new IllegalArgumentException("用户不存在");
+        if (!passwordEncoder.matches(oldPassword, user.getPasswordHash())) {
+            throw new IllegalArgumentException("原密码不正确");
+        }
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userMapper.updateById(user);
     }
 }

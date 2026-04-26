@@ -80,4 +80,35 @@ public class AuthServiceImpl implements AuthService {
     public void sendSmsCode(String target, String purpose) {
         verificationCodeUtils.sendSmsCode(target, purpose);
     }
+
+    @Override
+    public LoginVO loginWithCode(String identifier, String code) {
+        String channel = identifier.contains("@") ? "email" : "sms";
+        if (!verificationCodeUtils.verify(channel, identifier, "login", code)) {
+            throw new IllegalArgumentException("验证码错误或已过期");
+        }
+        UserAccount user = userMapper.selectOne(new QueryWrapper<UserAccount>()
+            .and(q -> q.eq("email", identifier).or().eq("phone", identifier))
+            .last("LIMIT 1"));
+        if (user == null) {
+            throw new IllegalArgumentException("账号不存在");
+        }
+        return new LoginVO(jwtUtils.issue(user.getId(), user.getRole()), UserVO.from(user));
+    }
+
+    @Override
+    public void resetPassword(String identifier, String code, String newPassword) {
+        String channel = identifier.contains("@") ? "email" : "sms";
+        if (!verificationCodeUtils.verify(channel, identifier, "reset", code)) {
+            throw new IllegalArgumentException("验证码错误或已过期");
+        }
+        UserAccount user = userMapper.selectOne(new QueryWrapper<UserAccount>()
+            .and(q -> q.eq("email", identifier).or().eq("phone", identifier))
+            .last("LIMIT 1"));
+        if (user == null) {
+            throw new IllegalArgumentException("账号不存在");
+        }
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userMapper.updateById(user);
+    }
 }

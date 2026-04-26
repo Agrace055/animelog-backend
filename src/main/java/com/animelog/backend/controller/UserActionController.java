@@ -37,6 +37,15 @@ public class UserActionController {
         return AjaxResult.success(userActionService.updateProfile(userId, request));
     }
 
+    /**
+     * 修改密码（已登录状态），需提供旧密码验证身份。
+     */
+    @PutMapping("/users/{userId}/password")
+    public AjaxResult changePassword(@PathVariable Long userId, @RequestBody ChangePasswordRequest request) {
+        userActionService.changePassword(userId, request.oldPassword(), request.newPassword());
+        return AjaxResult.success();
+    }
+
     // ── 观看/阅读记录 ────────────────────────────────────────────────────────────
 
     /**
@@ -177,6 +186,10 @@ public class UserActionController {
     @PostMapping("/nsfw/applications")
     public AjaxResult applyNsfw(@RequestBody NsfwAccessApplication application) {
         return AjaxResult.success(userActionService.applyNsfw(application));
+    }
+
+    /** 修改密码请求参数 */
+    public record ChangePasswordRequest(String oldPassword, String newPassword) {
     }
 }
 

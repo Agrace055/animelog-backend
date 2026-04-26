@@ -69,7 +69,32 @@ public class AuthController {
     public record RegisterRequest(String username, String nickname, String password, String email, String phone, String code) {
     }
 
+    /**
+     * 验证码登录，支持邮箱或手机号 + 验证码登录。
+     */
+    @PostMapping("/login/code")
+    public AjaxResult loginCode(@RequestBody LoginCodeRequest request) {
+        return AjaxResult.success(authService.loginWithCode(request.identifier(), request.code()));
+    }
+
+    /**
+     * 重设密码（忘记密码），通过验证码验证身份后设置新密码。
+     */
+    @PostMapping("/password/reset")
+    public AjaxResult resetPassword(@RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request.identifier(), request.code(), request.newPassword());
+        return AjaxResult.success();
+    }
+
     /** 验证码请求参数 */
     public record CodeRequest(String target, String purpose) {
+    }
+
+    /** 验证码登录请求参数 */
+    public record LoginCodeRequest(@NotBlank String identifier, @NotBlank String code) {
+    }
+
+    /** 重设密码请求参数 */
+    public record ResetPasswordRequest(@NotBlank String identifier, @NotBlank String code, @NotBlank String newPassword) {
     }
 }

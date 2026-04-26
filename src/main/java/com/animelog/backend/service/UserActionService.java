@@ -61,4 +61,7 @@ public interface UserActionService {
 
     /** 更新用户个人信息（nickname、email、phone、avatarUrl，null 则跳过）。 */
     UserVO updateProfile(Long userId, UpdateProfileRequest request);
+
+    /** 修改密码（已登录状态），验证旧密码后设置新密码。 */
+    void changePassword(Long userId, String oldPassword, String newPassword);
 }
