@@ -1,6 +1,8 @@
 package com.animelog.backend.service.impl;
 
 import com.animelog.backend.domain.UserAccount;
+import com.animelog.backend.dto.LoginVO;
+import com.animelog.backend.dto.UserVO;
 import com.animelog.backend.mapper.UserAccountMapper;
 import com.animelog.backend.service.AuthService;
 import com.animelog.backend.utils.JwtUtils;
@@ -10,7 +12,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.Map;
 
 /**
  * 认证业务实现。
@@ -35,8 +36,8 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public Map<String, Object> login(String identifier, String password) {
-        // 按用户名、邮筱或手机号查找未删除的用户（is_deleted=0 由 @TableLogic 自动附加）
+    public LoginVO login(String identifier, String password) {
+        // 按用户名、邮箱或手机号查找未删除的用户（is_deleted=0 由 @TableLogic 自动附加）
         UserAccount user = userMapper.selectOne(new QueryWrapper<UserAccount>()
             .and(q -> q.eq("username", identifier).or().eq("email", identifier).or().eq("phone", identifier))
             .last("LIMIT 1"));
@@ -44,13 +45,13 @@ public class AuthServiceImpl implements AuthService {
         if (user == null || !passwordEncoder.matches(password, user.getPasswordHash())) {
             throw new IllegalArgumentException("账号或密码不正确");
         }
-        // 签发 JWT Token 并返回
-        return Map.of("token", jwtUtils.issue(user.getId(), user.getRole()), "user", user);
+        // 签发 JWT Token 并返回，用户信息使用 UserVO 屏蔽敏感字段
+        return new LoginVO(jwtUtils.issue(user.getId(), user.getRole()), UserVO.from(user));
     }
 
     @Override
-    public UserAccount register(String username, String nickname, String password, String email, String phone, String code) {
-        // 检查用户名、邮筱、手机号是否已存在（is_deleted=0 由 @TableLogic 自动附加）
+    public UserVO register(String username, String nickname, String password, String email, String phone, String code) {
+        // 检查用户名、邮箱、手机号是否已存在（is_deleted=0 由 @TableLogic 自动附加）
         boolean exists = userMapper.selectCount(new QueryWrapper<UserAccount>()
             .and(q -> q.eq("username", username).or().eq("email", email).or().eq("phone", phone))) > 0;
         if (exists) {
@@ -70,7 +71,7 @@ public class AuthServiceImpl implements AuthService {
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
         userMapper.insert(user);
-        return user;
+        return UserVO.from(user);
     }
 
     @Override
