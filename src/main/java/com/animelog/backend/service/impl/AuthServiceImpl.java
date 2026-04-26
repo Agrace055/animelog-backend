@@ -67,9 +67,6 @@ public class AuthServiceImpl implements AuthService {
         user.setRole("user");
         user.setAvatarUrl("https://picsum.photos/seed/" + username + "/100/100");
         user.setNsfwStatus("none");
-        LocalDateTime now = LocalDateTime.now();
-        user.setCreatedAt(now);
-        user.setUpdatedAt(now);
         userMapper.insert(user);
         return UserVO.from(user);
     }

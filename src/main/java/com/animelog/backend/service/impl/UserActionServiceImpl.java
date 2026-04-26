@@ -67,10 +67,7 @@ public class UserActionServiceImpl implements UserActionService {
     @Override
     public UserMediaRecord saveRecord(Long userId, UserMediaRecord record) {
         record.setUserId(userId);
-        LocalDateTime now = LocalDateTime.now();
-        record.setUpdatedAt(now);
         if (record.getId() == null) {
-            record.setCreatedAt(now);
             recordMapper.insert(record);
         } else {
             recordMapper.updateById(record);
@@ -86,7 +83,6 @@ public class UserActionServiceImpl implements UserActionService {
             UserFavorite favorite = new UserFavorite();
             favorite.setUserId(userId);
             favorite.setMediaId(mediaId);
-            favorite.setCreatedAt(LocalDateTime.now());
             favoriteMapper.insert(favorite);
         } else {
             favoriteMapper.deleteById(existing.getId());
@@ -113,9 +109,6 @@ public class UserActionServiceImpl implements UserActionService {
         review.setLikeCount(0);
         review.setDislikeCount(0);
         review.setReported(false);
-        LocalDateTime now = LocalDateTime.now();
-        review.setCreatedAt(now);
-        review.setUpdatedAt(now);
         reviewMapper.insert(review);
         return review;
     }
@@ -124,7 +117,6 @@ public class UserActionServiceImpl implements UserActionService {
     public void reportReview(Long reviewId, ReviewReport report) {
         report.setReviewId(reviewId);
         report.setStatus("pending");
-        report.setCreatedAt(LocalDateTime.now());
         reportMapper.insert(report);
         Review review = reviewMapper.selectById(reviewId);
         if (review != null) {
@@ -146,7 +138,6 @@ public class UserActionServiceImpl implements UserActionService {
             reaction.setReviewId(reviewId);
             reaction.setUserId(userId);
             reaction.setReaction("like");
-            reaction.setCreatedAt(LocalDateTime.now());
             reactionMapper.insert(reaction);
             review.setLikeCount(review.getLikeCount() + 1);
         } else if ("dislike".equals(existing.getReaction())) {
@@ -176,7 +167,6 @@ public class UserActionServiceImpl implements UserActionService {
             reaction.setReviewId(reviewId);
             reaction.setUserId(userId);
             reaction.setReaction("dislike");
-            reaction.setCreatedAt(LocalDateTime.now());
             reactionMapper.insert(reaction);
             review.setDislikeCount(review.getDislikeCount() + 1);
         } else if ("like".equals(existing.getReaction())) {
@@ -274,9 +264,6 @@ public class UserActionServiceImpl implements UserActionService {
     @Override
     public UserFeedback feedback(UserFeedback feedback) {
         feedback.setStatus("pending");
-        LocalDateTime now = LocalDateTime.now();
-        feedback.setCreatedAt(now);
-        feedback.setUpdatedAt(now);
         feedbackMapper.insert(feedback);
         return feedback;
     }
@@ -284,7 +271,6 @@ public class UserActionServiceImpl implements UserActionService {
     @Override
     public NsfwAccessApplication applyNsfw(NsfwAccessApplication application) {
         application.setStatus("pending");
-        application.setCreatedAt(LocalDateTime.now());
         nsfwMapper.insert(application);
         return application;
     }
@@ -302,7 +288,6 @@ public class UserActionServiceImpl implements UserActionService {
         if (request.getEmail() != null) user.setEmail(request.getEmail());
         if (request.getPhone() != null) user.setPhone(request.getPhone());
         if (request.getAvatarUrl() != null) user.setAvatarUrl(request.getAvatarUrl());
-        user.setUpdatedAt(LocalDateTime.now());
         userMapper.updateById(user);
         return UserVO.from(user);
     }
