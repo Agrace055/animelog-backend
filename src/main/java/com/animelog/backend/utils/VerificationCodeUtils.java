@@ -1,6 +1,12 @@
 package com.animelog.backend.utils;
 
+import com.aliyun.dypnsapi20170525.Client;
+import com.aliyun.dypnsapi20170525.models.SendSmsVerifyCodeRequest;
+import com.aliyun.dm20151123.models.SingleSendMailRequest;
+import com.aliyun.teaopenapi.models.Config;
 import com.animelog.backend.config.AnimeLogProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -13,7 +19,10 @@ import java.time.Duration;
  */
 @Component
 public class VerificationCodeUtils {
+    private static final Logger log = LoggerFactory.getLogger(VerificationCodeUtils.class);
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final int EXPIRE_MINUTES = 10;
+
     private final StringRedisTemplate redisTemplate;
     private final AnimeLogProperties properties;
 
@@ -23,25 +32,63 @@ public class VerificationCodeUtils {
     }
 
     /**
-     * 发送邮箱验证码。
+     * 发送邮箱验证码（阿里云邮件推送 DirectMail）。
      * 未配置阿里云时仅生成验证码存入 Redis（调试模式）。
      */
     public void sendEmailCode(String email, String purpose) {
-        createAndStore("email", email, purpose);
-        // 未配置阿里云密钥时跳过实际发送
-        if (properties.aliyun().accessKeyId() == null || properties.aliyun().accessKeyId().isBlank()) {
+        String code = createAndStore("email", email, purpose);
+        AnimeLogProperties.Aliyun aliyun = properties.aliyun();
+        if (aliyun.accessKeyId() == null || aliyun.accessKeyId().isBlank()) {
+            log.warn("[DEBUG] 邮件验证码 {} -> {}", email, code);
             return;
+        }
+        try {
+            Config config = new Config()
+                    .setAccessKeyId(aliyun.accessKeyId())
+                    .setAccessKeySecret(aliyun.accessKeySecret())
+                    .setRegionId(aliyun.regionId());
+            com.aliyun.dm20151123.Client client = new com.aliyun.dm20151123.Client(config);
+            SingleSendMailRequest request = new SingleSendMailRequest()
+                    .setAccountName(aliyun.dmAccountName())
+                    .setFromAlias(aliyun.dmFromAlias())
+                    .setAddressType(1)
+                    .setToAddress(email)
+                    .setSubject("AnimeLog 验证码")
+                    .setHtmlBody("您的验证码为：<b>" + code + "</b>，" + EXPIRE_MINUTES + " 分钟内有效，请勿泄露。");
+            client.singleSendMail(request);
+        } catch (Exception e) {
+            log.error("邮件验证码发送失败 -> {}: {}", email, e.getMessage());
+            throw new RuntimeException("邮件发送失败，请稍后重试");
         }
     }
 
     /**
-     * 发送短信验证码。
+     * 发送短信验证码（阿里云号码认证服务 - 短信认证）。
      * 未配置阿里云时仅生成验证码存入 Redis（调试模式）。
      */
     public void sendSmsCode(String phone, String purpose) {
-        createAndStore("sms", phone, purpose);
-        if (properties.aliyun().accessKeyId() == null || properties.aliyun().accessKeyId().isBlank()) {
+        String code = createAndStore("sms", phone, purpose);
+        AnimeLogProperties.Aliyun aliyun = properties.aliyun();
+        if (aliyun.accessKeyId() == null || aliyun.accessKeyId().isBlank()) {
+            log.warn("[DEBUG] 短信验证码 {} -> {}", phone, code);
             return;
+        }
+        try {
+            Config config = new Config()
+                    .setAccessKeyId(aliyun.accessKeyId())
+                    .setAccessKeySecret(aliyun.accessKeySecret())
+                    .setRegionId(aliyun.regionId());
+            Client client = new Client(config);
+            String templateParam = "{\"code\":\"" + code + "\",\"min\":\"" + EXPIRE_MINUTES + "\"}";
+            SendSmsVerifyCodeRequest request = new SendSmsVerifyCodeRequest()
+                    .setPhoneNumber(phone)
+                    .setSignName(aliyun.smsSignName())
+                    .setTemplateCode(aliyun.smsTemplateCode())
+                    .setTemplateParam(templateParam);
+            client.sendSmsVerifyCode(request);
+        } catch (Exception e) {
+            log.error("短信验证码发送失败 -> {}: {}", phone, e.getMessage());
+            throw new RuntimeException("短信发送失败，请稍后重试");
         }
     }
 
