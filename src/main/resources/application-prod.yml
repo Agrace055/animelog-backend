@@ -1,0 +1,39 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      database: ${REDIS_DATABASE:0}
+
+animelog:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration-seconds: ${JWT_EXPIRATION_SECONDS:86400}
+  minio:
+    endpoint: ${MINIO_ENDPOINT}
+    access-key: ${MINIO_ACCESS_KEY}
+    secret-key: ${MINIO_SECRET_KEY}
+    bucket: ${MINIO_BUCKET:anime-assets}
+    public-object-base-url: ${PUBLIC_OBJECT_BASE_URL}
+  bangumi:
+    latest-json-url: ${BANGUMI_ARCHIVE_LATEST_JSON_URL:https://raw.githubusercontent.com/bangumi/Archive/master/aux/latest.json}
+    work-dir: ${BANGUMI_ARCHIVE_WORK_DIR:/data/animelog-bangumi}
+    task-runner-enabled: ${BANGUMI_TASK_RUNNER_ENABLED:true}
+    task-runner-lock-seconds: ${BANGUMI_TASK_RUNNER_LOCK_SECONDS:600}
+  aliyun:
+    region-id: ${ALIYUN_REGION_ID:cn-hangzhou}
+    access-key-id: ${ALIYUN_ACCESS_KEY_ID}
+    access-key-secret: ${ALIYUN_ACCESS_KEY_SECRET}
+    sms-sign-name: ${ALIYUN_SMS_SIGN_NAME}
+    sms-template-code: ${ALIYUN_SMS_TEMPLATE_CODE}
+    dm-account-name: ${ALIYUN_DM_ACCOUNT_NAME}
+    dm-from-alias: ${ALIYUN_DM_FROM_ALIAS:AnimeLog}

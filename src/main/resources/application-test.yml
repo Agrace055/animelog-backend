@@ -1,0 +1,36 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5432/animelog_test
+    username: animelog
+    password: change_me
+    driver-class-name: org.postgresql.Driver
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password:
+      database: 1
+
+animelog:
+  jwt:
+    secret: test_secret_key_at_least_32_chars_for_testing!!
+    expiration-seconds: 3600
+  minio:
+    endpoint: http://127.0.0.1:9000
+    access-key: animelog
+    secret-key: change_me
+    bucket: anime-assets-test
+    public-object-base-url: http://127.0.0.1/img
+  bangumi:
+    latest-json-url: https://raw.githubusercontent.com/bangumi/Archive/master/aux/latest.json
+    work-dir: /tmp/animelog-bangumi-test
+    task-runner-enabled: false
+    task-runner-lock-seconds: 60
+  aliyun:
+    region-id: cn-hangzhou
+    access-key-id:
+    access-key-secret:
+    sms-sign-name:
+    sms-template-code:
+    dm-account-name:
+    dm-from-alias: AnimeLog
