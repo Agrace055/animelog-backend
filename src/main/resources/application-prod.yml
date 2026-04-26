@@ -25,7 +25,6 @@ animelog:
     bucket: ${MINIO_BUCKET:anime-assets}
     public-object-base-url: ${PUBLIC_OBJECT_BASE_URL}
   bangumi:
-    latest-json-url: ${BANGUMI_ARCHIVE_LATEST_JSON_URL:https://raw.githubusercontent.com/bangumi/Archive/master/aux/latest.json}
     work-dir: ${BANGUMI_ARCHIVE_WORK_DIR:/data/animelog-bangumi}
     task-runner-enabled: ${BANGUMI_TASK_RUNNER_ENABLED:true}
     task-runner-lock-seconds: ${BANGUMI_TASK_RUNNER_LOCK_SECONDS:600}

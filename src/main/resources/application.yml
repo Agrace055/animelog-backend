@@ -6,6 +6,10 @@ spring:
     active: dev
   jackson:
     default-property-inclusion: non_null
+  servlet:
+    multipart:
+      max-file-size: 2GB
+      max-request-size: 2GB
 
 mybatis-plus:
   configuration:

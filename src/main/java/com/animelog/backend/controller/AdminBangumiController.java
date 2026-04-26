@@ -5,6 +5,7 @@ import com.animelog.backend.dto.BangumiSourceQueryRequest;
 import com.animelog.backend.service.BangumiTaskService;
 import com.animelog.backend.service.BangumiSourceService;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -23,11 +24,19 @@ public class AdminBangumiController {
     }
 
     /**
-     * 创建存档同步任务，从 Bangumi 下载最新数据归档。
+     * 创建存档同步任务，解析服务器中已上传的数据归档。
      */
     @PostMapping("/tasks/archive-sync")
     public AjaxResult createArchiveSyncTask() {
         return AjaxResult.success(taskService.createArchiveSyncTask());
+    }
+
+    /**
+     * 上传 Bangumi 存档压缩包，并创建解析任务。
+     */
+    @PostMapping("/archive/upload")
+    public AjaxResult uploadArchive(@RequestParam("file") MultipartFile file) {
+        return AjaxResult.success(taskService.uploadArchiveAndCreateSyncTask(file));
     }
 
     /**

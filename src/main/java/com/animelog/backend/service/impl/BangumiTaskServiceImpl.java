@@ -13,32 +13,30 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
 import java.math.BigDecimal;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
  * Bangumi 任务业务实现，提供存档同步和业务导入功能。<br>
- * 包含定时任务执行器，定期从 Bangumi 下载归档数据并解析导入。
+ * 包含定时任务执行器，解析管理员上传的 Bangumi 归档数据并导入。
  */
 @Service
 public class BangumiTaskServiceImpl implements BangumiTaskService {
     private static final String LOCK_KEY = "bangumi:task:runner";
+    private static final String ARCHIVE_EXTENSION = ".zip";
     private final BangumiTaskMapper taskMapper;
     private final BangumiTaskStepMapper stepMapper;
     private final BangumiTaskItemMapper itemMapper;
@@ -50,7 +48,6 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
     private final StringRedisTemplate redisTemplate;
     private final AnimeLogProperties properties;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
 
     public BangumiTaskServiceImpl(
         BangumiTaskMapper taskMapper,
@@ -80,6 +77,12 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
     @Override
     public BangumiTask createArchiveSyncTask() {
         return createTask("archive_sync", null);
+    }
+
+    @Override
+    public BangumiTask uploadArchiveAndCreateSyncTask(MultipartFile file) {
+        Path archive = saveUploadedArchive(file);
+        return createTask("archive_sync", archive.getFileName().toString());
     }
 
     @Override
@@ -174,29 +177,17 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
     }
 
     /**
-     * 执行存档同步任务：获取最新归档元数据、下载文件、解析并入库。
+     * 执行存档同步任务：读取管理员上传的 ZIP 文件、解析并入库。
      */
     private void runArchiveSync(BangumiTask task) throws Exception {
-        // 步骤 1：预留（可在此处执行前置校验）
-        step(task.getId(), 1, "fetch_latest", () -> {
-        });
-        // 获取最新归档的元数据信息
-        JsonNode latest = fetchLatestJson();
-        String filename = latest.path("file").asText();
-        String url = latest.path("url").asText();
-        long size = latest.path("size").asLong(0);
-        if (filename.isBlank() || url.isBlank()) {
-            throw new IllegalStateException("Bangumi latest metadata missing file/url");
-        }
-
-        // 步骤 2：下载归档文件
-        Path zip = step(task.getId(), 2, "download_archive", () -> downloadArchive(filename, url));
+        // 步骤 1：定位已上传的归档文件
+        Path zip = step(task.getId(), 1, "load_uploaded_archive", () -> resolveUploadedArchive(task.getRequestPayload()));
         // 计算文件哈希并记录归档记录
         String archiveHash = sha256(zip);
-        upsertArchiveFile(filename, size, archiveHash, zip);
+        upsertArchiveFile(zip.getFileName().toString(), Files.size(zip), archiveHash, zip);
 
-        // 步骤 3：解析 ZIP 并导入数据
-        Counters counters = step(task.getId(), 3, "parse_and_upsert", () -> parseZipAndUpsert(task, zip));
+        // 步骤 2：解析 ZIP 并导入数据
+        Counters counters = step(task.getId(), 2, "parse_and_upsert", () -> parseZipAndUpsert(task, zip));
         // 更新任务统计信息
         task.setTotalCount(counters.total);
         task.setSuccessCount(counters.inserted);
@@ -266,33 +257,87 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         taskMapper.updateById(task);
     }
 
-    /** 从 Bangumi 获取最新归档的 JSON 元数据。 */
-    private JsonNode fetchLatestJson() throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(properties.bangumi().latestJsonUrl())).GET().build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (response.statusCode() >= 400) {
-            throw new IOException("Bangumi latest metadata request failed: " + response.statusCode());
+    /** 保存管理员上传的 ZIP 归档，工作目录中只保留一个压缩包。 */
+    private Path saveUploadedArchive(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("请选择 Bangumi 数据源压缩包");
         }
-        return objectMapper.readTree(response.body());
+        String filename = Optional.ofNullable(file.getOriginalFilename())
+            .map(name -> Paths.get(name).getFileName().toString())
+            .map(name -> name.replace('\\', '_'))
+            .map(name -> name.replaceAll("[^A-Za-z0-9._-]", "_"))
+            .filter(name -> !name.isBlank())
+            .orElse("bangumi-archive.zip");
+        if (!filename.toLowerCase(Locale.ROOT).endsWith(ARCHIVE_EXTENSION)) {
+            throw new IllegalArgumentException("Bangumi 数据源压缩包必须是 ZIP 文件");
+        }
+        Path dir = Paths.get(properties.bangumi().workDir());
+        Path target = dir.resolve(filename).normalize();
+        if (!target.startsWith(dir.normalize())) {
+            throw new IllegalArgumentException("Invalid archive filename");
+        }
+        Path temp = null;
+        try {
+            Files.createDirectories(dir);
+            temp = Files.createTempFile(dir, "bangumi-archive-", ".upload");
+            try (InputStream in = file.getInputStream()) {
+                Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
+            }
+            deleteExistingArchives(dir);
+            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            return target;
+        } catch (IOException e) {
+            throw new IllegalStateException("保存 Bangumi 数据源压缩包失败", e);
+        } finally {
+            if (temp != null) {
+                try {
+                    Files.deleteIfExists(temp);
+                } catch (IOException ignored) {
+                }
+            }
+        }
     }
 
-    /** 下载归档文件到本地工作目录。若文件已存在则直接返回。 */
-    private Path downloadArchive(String filename, String url) throws Exception {
+    /** 删除工作目录中旧的 ZIP 文件。 */
+    private void deleteExistingArchives(Path dir) throws IOException {
+        try (Stream<Path> stream = Files.list(dir)) {
+            Iterator<Path> iterator = stream
+                .filter(Files::isRegularFile)
+                .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(ARCHIVE_EXTENSION))
+                .iterator();
+            while (iterator.hasNext()) {
+                Files.deleteIfExists(iterator.next());
+            }
+        }
+    }
+
+    /** 根据任务 payload 或工作目录定位已上传的 ZIP 文件。 */
+    private Path resolveUploadedArchive(String filename) throws IOException {
         Path dir = Paths.get(properties.bangumi().workDir());
-        Files.createDirectories(dir);
-        Path target = dir.resolve(filename);
-        if (Files.exists(target)) {
-            return target;
+        if (!Files.isDirectory(dir)) {
+            throw new IllegalStateException("No uploaded Bangumi archive found");
         }
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url)).GET().build();
-        HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
-        if (response.statusCode() >= 400) {
-            throw new IOException("Bangumi archive download failed: " + response.statusCode());
+        if (filename != null && !filename.isBlank()) {
+            Path archive = dir.resolve(filename).normalize();
+            if (archive.startsWith(dir.normalize()) && Files.isRegularFile(archive)) {
+                return archive;
+            }
+            throw new IllegalStateException("Uploaded Bangumi archive not found: " + filename);
         }
-        try (InputStream in = response.body()) {
-            Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+        try (Stream<Path> stream = Files.list(dir)) {
+            Iterator<Path> iterator = stream
+                .filter(Files::isRegularFile)
+                .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(ARCHIVE_EXTENSION))
+                .iterator();
+            if (!iterator.hasNext()) {
+                throw new IllegalStateException("No uploaded Bangumi archive found");
+            }
+            Path archive = iterator.next();
+            if (iterator.hasNext()) {
+                throw new IllegalStateException("Multiple Bangumi archives found in work directory");
+            }
+            return archive;
         }
-        return target;
     }
 
     /** 解析 ZIP 归档，找到 subject JSONL 文件并进行导入。 */

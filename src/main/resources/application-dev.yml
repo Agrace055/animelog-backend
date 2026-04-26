@@ -22,7 +22,6 @@ animelog:
     bucket: anime-assets
     public-object-base-url: http://127.0.0.1/img
   bangumi:
-    latest-json-url: https://raw.githubusercontent.com/bangumi/Archive/master/aux/latest.json
     work-dir: /tmp/animelog-bangumi
     task-runner-enabled: true
     task-runner-lock-seconds: 600
