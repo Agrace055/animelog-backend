@@ -32,11 +32,23 @@ public class AdminBangumiController {
     }
 
     /**
-     * 上传 Bangumi 存档压缩包，并创建解析任务。
+     * 上传 Bangumi 存档压缩包分片，并在全部分片到齐后创建解析任务。
      */
-    @PostMapping("/archive/upload")
-    public AjaxResult uploadArchive(@RequestParam("file") MultipartFile file) {
-        return AjaxResult.success(taskService.uploadArchiveAndCreateSyncTask(file));
+    @PostMapping("/archive/upload/chunk")
+    public AjaxResult uploadArchiveChunk(
+        @RequestParam("file") MultipartFile file,
+        @RequestParam("uploadId") String uploadId,
+        @RequestParam("filename") String filename,
+        @RequestParam("chunkIndex") int chunkIndex,
+        @RequestParam("totalChunks") int totalChunks
+    ) {
+        return AjaxResult.success(taskService.uploadArchiveChunkAndCreateSyncTask(
+            file,
+            uploadId,
+            filename,
+            chunkIndex,
+            totalChunks
+        ));
     }
 
     /**

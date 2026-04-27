@@ -37,6 +37,8 @@ import java.util.zip.ZipInputStream;
 public class BangumiTaskServiceImpl implements BangumiTaskService {
     private static final String LOCK_KEY = "bangumi:task:runner";
     private static final String ARCHIVE_EXTENSION = ".zip";
+    private static final String CHUNK_UPLOAD_DIR = ".uploads";
+    private static final long MAX_CHUNK_BYTES = 5L * 1024L * 1024L;
     private final BangumiTaskMapper taskMapper;
     private final BangumiTaskStepMapper stepMapper;
     private final BangumiTaskItemMapper itemMapper;
@@ -80,9 +82,48 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
     }
 
     @Override
-    public BangumiTask uploadArchiveAndCreateSyncTask(MultipartFile file) {
-        Path archive = saveUploadedArchive(file);
-        return createTask("archive_sync", archive.getFileName().toString());
+    public synchronized ArchiveChunkUploadResult uploadArchiveChunkAndCreateSyncTask(
+        MultipartFile file,
+        String uploadId,
+        String filename,
+        int chunkIndex,
+        int totalChunks
+    ) {
+        validateChunkUpload(file, uploadId, chunkIndex, totalChunks);
+        String safeFilename = sanitizeArchiveFilename(filename);
+        Path dir = Paths.get(properties.bangumi().workDir());
+        Path uploadDir = dir.resolve(CHUNK_UPLOAD_DIR).resolve(uploadId).normalize();
+        if (!uploadDir.startsWith(dir.resolve(CHUNK_UPLOAD_DIR).normalize())) {
+            throw new IllegalArgumentException("Invalid upload id");
+        }
+        try {
+            Files.createDirectories(uploadDir);
+            Path chunk = uploadDir.resolve(chunkFilename(chunkIndex)).normalize();
+            if (!chunk.startsWith(uploadDir)) {
+                throw new IllegalArgumentException("Invalid chunk index");
+            }
+            Path temp = Files.createTempFile(uploadDir, "chunk-", ".upload");
+            try {
+                try (InputStream in = file.getInputStream()) {
+                    Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
+                }
+                Files.move(temp, chunk, StandardCopyOption.REPLACE_EXISTING);
+            } finally {
+                Files.deleteIfExists(temp);
+            }
+
+            int receivedChunks = countReceivedChunks(uploadDir);
+            if (receivedChunks < totalChunks) {
+                return new ArchiveChunkUploadResult(false, receivedChunks, totalChunks, null);
+            }
+
+            Path archive = assembleUploadedArchive(uploadDir, dir, safeFilename, totalChunks);
+            deleteDirectory(uploadDir);
+            BangumiTask task = createTask("archive_sync", archive.getFileName().toString());
+            return new ArchiveChunkUploadResult(true, totalChunks, totalChunks, task);
+        } catch (IOException e) {
+            throw new IllegalStateException("保存 Bangumi 数据源压缩包分片失败", e);
+        }
     }
 
     @Override
@@ -257,12 +298,8 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         taskMapper.updateById(task);
     }
 
-    /** 保存管理员上传的 ZIP 归档，工作目录中只保留一个压缩包。 */
-    private Path saveUploadedArchive(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("请选择 Bangumi 数据源压缩包");
-        }
-        String filename = Optional.ofNullable(file.getOriginalFilename())
+    private String sanitizeArchiveFilename(String originalFilename) {
+        String filename = Optional.ofNullable(originalFilename)
             .map(name -> Paths.get(name).getFileName().toString())
             .map(name -> name.replace('\\', '_'))
             .map(name -> name.replaceAll("[^A-Za-z0-9._-]", "_"))
@@ -271,29 +308,77 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         if (!filename.toLowerCase(Locale.ROOT).endsWith(ARCHIVE_EXTENSION)) {
             throw new IllegalArgumentException("Bangumi 数据源压缩包必须是 ZIP 文件");
         }
-        Path dir = Paths.get(properties.bangumi().workDir());
+        return filename;
+    }
+
+    private void validateChunkUpload(MultipartFile file, String uploadId, int chunkIndex, int totalChunks) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("请选择 Bangumi 数据源压缩包分片");
+        }
+        if (file.getSize() > MAX_CHUNK_BYTES) {
+            throw new IllegalArgumentException("单个分片不能超过 5MB");
+        }
+        if (uploadId == null || !uploadId.matches("[A-Za-z0-9_-]{8,64}")) {
+            throw new IllegalArgumentException("Invalid upload id");
+        }
+        if (totalChunks < 1 || totalChunks > 10000) {
+            throw new IllegalArgumentException("Invalid chunk count");
+        }
+        if (chunkIndex < 0 || chunkIndex >= totalChunks) {
+            throw new IllegalArgumentException("Invalid chunk index");
+        }
+    }
+
+    private String chunkFilename(int chunkIndex) {
+        return String.format(Locale.ROOT, "chunk-%05d.part", chunkIndex);
+    }
+
+    private int countReceivedChunks(Path uploadDir) throws IOException {
+        try (Stream<Path> stream = Files.list(uploadDir)) {
+            return (int) stream
+                .filter(Files::isRegularFile)
+                .filter(path -> path.getFileName().toString().matches("chunk-\\d{5}\\.part"))
+                .count();
+        }
+    }
+
+    private Path assembleUploadedArchive(Path uploadDir, Path dir, String filename, int totalChunks) throws IOException {
+        Files.createDirectories(dir);
+        Path temp = Files.createTempFile(dir, "bangumi-archive-", ".upload");
+        try {
+            try (OutputStream out = Files.newOutputStream(temp, StandardOpenOption.TRUNCATE_EXISTING)) {
+                for (int i = 0; i < totalChunks; i++) {
+                    Path chunk = uploadDir.resolve(chunkFilename(i));
+                    if (!Files.isRegularFile(chunk)) {
+                        throw new IllegalArgumentException("Missing archive chunk: " + i);
+                    }
+                    Files.copy(chunk, out);
+                }
+            }
+            return moveCompletedArchive(temp, dir, filename);
+        } finally {
+            Files.deleteIfExists(temp);
+        }
+    }
+
+    private Path moveCompletedArchive(Path temp, Path dir, String filename) throws IOException {
         Path target = dir.resolve(filename).normalize();
         if (!target.startsWith(dir.normalize())) {
             throw new IllegalArgumentException("Invalid archive filename");
         }
-        Path temp = null;
-        try {
-            Files.createDirectories(dir);
-            temp = Files.createTempFile(dir, "bangumi-archive-", ".upload");
-            try (InputStream in = file.getInputStream()) {
-                Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
-            }
-            deleteExistingArchives(dir);
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
-            return target;
-        } catch (IOException e) {
-            throw new IllegalStateException("保存 Bangumi 数据源压缩包失败", e);
-        } finally {
-            if (temp != null) {
-                try {
-                    Files.deleteIfExists(temp);
-                } catch (IOException ignored) {
-                }
+        deleteExistingArchives(dir);
+        Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+        return target;
+    }
+
+    private void deleteDirectory(Path dir) throws IOException {
+        if (!Files.exists(dir)) {
+            return;
+        }
+        try (Stream<Path> stream = Files.walk(dir)) {
+            Iterator<Path> iterator = stream.sorted(Comparator.reverseOrder()).iterator();
+            while (iterator.hasNext()) {
+                Files.deleteIfExists(iterator.next());
             }
         }
     }
