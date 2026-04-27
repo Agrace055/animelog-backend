@@ -504,7 +504,7 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
             source.setYear(source.getAirDate().getYear());
             source.setMonth(source.getAirDate().getMonthValue());
         }
-        source.setEpisodeCount(parseEpisodeCount(node.path("infobox").asText("")));
+        source.setEpisodeCount(parseEpisodeCount(source.getInfobox()));
         source.setTagsJson(node.has("tags") ? objectMapper.writeValueAsString(node.get("tags")) : null);
         source.setScore(node.path("score").isNumber() ? BigDecimal.valueOf(node.path("score").asDouble()) : null);
         source.setRank(node.path("rank").isInt() && node.path("rank").asInt() > 0 ? node.path("rank").asInt() : null);
@@ -622,13 +622,83 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         }
     }
 
-    /** 从 infobox 中解析集数/话数。匹配模式如 "话数 26" 或 "集数 12"。 */
+    /** 从 infobox 中解析集数/话数，只读取对应字段值，避免 ISBN 等其他字段被误判。 */
     private Integer parseEpisodeCount(String infobox) {
-        if (infobox == null) {
+        Map<String, String> fields = parseInfoboxFields(infobox);
+        Integer count = parseEpisodeCountValue(fields.get("话数"));
+        if (count != null) {
+            return count;
+        }
+        return parseEpisodeCountValue(fields.get("集数"));
+    }
+
+    /**
+     * 按 Bangumi wiki infobox 的字段语义解析简单 key/value 行。
+     * 官方 Python 解析器也是先拆成 Field(key, value)，业务字段再按 key 精确读取。
+     */
+    private Map<String, String> parseInfoboxFields(String infobox) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        if (infobox == null || infobox.isBlank()) {
+            return fields;
+        }
+        for (String line : infobox.replace("\r\n", "\n").replace('\r', '\n').split("\n")) {
+            String text = line.trim();
+            if (!text.startsWith("|")) {
+                continue;
+            }
+            int eq = text.indexOf('=');
+            if (eq < 0) {
+                continue;
+            }
+            String key = text.substring(1, eq).trim();
+            String value = text.substring(eq + 1).trim();
+            if (!key.isBlank()) {
+                fields.putIfAbsent(key, value);
+            }
+        }
+        if (fields.isEmpty()) {
+            parseInfoboxJsonFields(infobox, fields);
+        }
+        return fields;
+    }
+
+    /** 兼容 Bangumi API 风格的 [{"key": "...", "value": "..."}] infobox。 */
+    private void parseInfoboxJsonFields(String infobox, Map<String, String> fields) {
+        try {
+            JsonNode root = objectMapper.readTree(infobox);
+            if (!root.isArray()) {
+                return;
+            }
+            for (JsonNode item : root) {
+                String key = item.path("key").asText("").trim();
+                JsonNode valueNode = item.get("value");
+                String value = valueNode == null || valueNode.isNull() ? "" : valueNode.asText("").trim();
+                if (!key.isBlank()) {
+                    fields.putIfAbsent(key, value);
+                }
+            }
+        } catch (Exception ignored) {
+            // infobox 允许包含非结构化旧数据，解析失败时不影响主体导入。
+        }
+    }
+
+    /** 只在目标字段值内部解析合理长度的正整数，避免长编号溢出。 */
+    private Integer parseEpisodeCountValue(String value) {
+        if (value == null || value.isBlank()) {
             return null;
         }
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(话数|集数)[^0-9]{0,20}(\\d+)").matcher(infobox);
-        return matcher.find() ? Integer.parseInt(matcher.group(2)) : null;
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(?<!\\d)(\\d{1,4})(?!\\d)").matcher(value);
+        if (!matcher.find()) {
+            return null;
+        }
+        int count = Integer.parseInt(matcher.group(1));
+        if (count <= 0) {
+            return null;
+        }
+        if (matcher.find()) {
+            return null;
+        }
+        return count;
     }
 
     /** 安全获取 JSON 文本字段，null 或空字符串时返回 null。 */
@@ -636,6 +706,9 @@ public class BangumiTaskServiceImpl implements BangumiTaskService {
         JsonNode value = node.get(field);
         if (value == null || value.isNull()) {
             return null;
+        }
+        if (value.isContainerNode()) {
+            return value.isEmpty() ? null : value.toString();
         }
         String text = value.asText();
         return text.isBlank() ? null : text;
